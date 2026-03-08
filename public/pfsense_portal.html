@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hotspot – Autenticação</title>
+    <style>
+        :root {
+            --primary: #0d6efd;
+            --primary-dark: #0a58ca;
+            --danger-bg: #fee2e2;
+            --danger-border: #fecaca;
+            --danger-text: #b91c1c;
+            --slate-800: #0f172a;
+            --muted: #6c757d;
+        }
+        * {
+            box-sizing: border-box;
+            font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        body {
+            margin: 0;
+            background: linear-gradient(135deg, #0d6efd, #0f172a);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .container {
+            width: min(420px, 100%);
+        }
+        .login-card {
+            width: 100%;
+            border-radius: 1rem;
+            background: #fff;
+            padding: 32px;
+            box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.45);
+        }
+        .portal-title {
+            margin: 0 0 1.5rem;
+            text-align: center;
+            color: var(--slate-800);
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+        .alert {
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+        }
+        .alert-danger {
+            background: var(--danger-bg);
+            border: 1px solid var(--danger-border);
+            color: var(--danger-text);
+        }
+        .d-none {
+            display: none !important;
+        }
+        .mb-3 {
+            margin-bottom: 1rem;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 0.35rem;
+            color: #475569;
+            font-weight: 600;
+        }
+        .form-control {
+            width: 100%;
+            border-radius: 0.65rem;
+            border: 1px solid #cbd5f5;
+            padding: 0.65rem 0.75rem;
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.2);
+        }
+        .btn {
+            width: 100%;
+            border: none;
+            padding: 0.7rem 1rem;
+            border-radius: 0.65rem;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+        .note {
+            margin-top: 1rem;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="login-card">
+        <h1 class="portal-title">Portal de Acesso</h1>
+        <div id="cp-error" class="alert alert-danger d-none" role="alert"></div>
+        <form id="cp-form" method="post" action="$PORTAL_ACTION$">
+            <div class="mb-3">
+                <label for="auth_user" class="form-label">Matrícula ou CPF</label>
+                <input type="text" class="form-control" id="auth_user" name="auth_user" required autocomplete="username">
+            </div>
+            <input type="hidden" name="auth_pass" id="auth_pass" value="">
+            <input type="hidden" name="auth_voucher" id="auth_voucher" value="">
+            <input type="hidden" name="redirurl" value="$PORTAL_REDIRURL$">
+            <input type="hidden" name="zone" value="$PORTAL_ZONE$">
+            <button class="btn btn-primary" type="submit" name="accept">Entrar</button>
+        </form>
+        <p class="note">Apenas usuários autorizados podem prosseguir.</p>
+    </div>
+</div>
+<script>
+// Ajuste se mudar o host do backend
+const API_URL = 'http://192.168.121.10/api/check';
+const TOKEN = 'change-me';
+
+function showError(message) {
+    const box = document.getElementById('cp-error');
+    box.textContent = message;
+    box.classList.remove('d-none');
+}
+
+function hideError() {
+    const box = document.getElementById('cp-error');
+    box.classList.add('d-none');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('cp-form');
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        hideError();
+        const usernameInput = document.getElementById('auth_user');
+        const username = usernameInput.value.trim().toLowerCase().replace(/\s+/g, '');
+        if (!/^[a-z0-9._-]+$/.test(username)) {
+            showError('Usuário em formato inválido.');
+            return;
+        }
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Auth-Token': TOKEN
+                },
+                body: JSON.stringify({ username })
+            });
+            const data = await response.json();
+            if (data.status === 'ok') {
+                form.submit();
+            } else if (data.status === 'deny') {
+                showError(data.message ?? 'Acesso negado.');
+            } else {
+                showError('Erro temporário. Tente novamente.');
+            }
+        } catch (error) {
+            showError('Falha ao contactar o servidor interno.');
+        }
+    });
+});
+</script>
+</body>
+</html>
