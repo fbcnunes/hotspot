@@ -130,6 +130,60 @@ final class RadiusRepository
         return $stmt->fetchAll();
     }
 
+    public function searchUsers(array $filters, int $page = 1, int $perPage = 50): array
+    {
+        $page = max(1, $page);
+        $perPage = max(1, min($perPage, 100));
+        $offset = ($page - 1) * $perPage;
+
+        if (!$this->hasUserFilters($filters)) {
+            return [
+                'data' => [],
+                'total' => 0,
+                'page' => $page,
+                'per_page' => $perPage,
+                'pages' => 0,
+            ];
+        }
+
+        $pdo = $this->getConnection();
+        [$whereSql, $params] = $this->buildUserFilters($filters);
+
+        $countStmt = $pdo->prepare(
+            "SELECT COUNT(*) 
+             FROM hotspot_users u
+             LEFT JOIN radusergroup ug ON u.username = ug.username
+             {$whereSql}"
+        );
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
+
+        $stmt = $pdo->prepare(
+            "SELECT u.*, ug.groupname
+             FROM hotspot_users u
+             LEFT JOIN radusergroup ug ON u.username = ug.username
+             {$whereSql}
+             ORDER BY u.name ASC
+             LIMIT :limit OFFSET :offset"
+        );
+
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'data' => $stmt->fetchAll(),
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => $total > 0 ? (int) ceil($total / $perPage) : 0,
+        ];
+    }
+
     public function setUserGroup(string $username, string $groupname): void
     {
         $pdo = $this->getConnection();
@@ -283,6 +337,47 @@ final class RadiusRepository
         $pdo = $this->getConnection();
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(:lock_key)');
         $stmt->execute(['lock_key' => $lockKey]);
+    }
+
+    private function hasUserFilters(array $filters): bool
+    {
+        foreach (['matricula', 'name', 'cpf', 'groupname'] as $key) {
+            if (trim((string) ($filters[$key] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function buildUserFilters(array $filters): array
+    {
+        $conditions = [];
+        $params = [];
+
+        if (trim((string) ($filters['matricula'] ?? '')) !== '') {
+            $conditions[] = 'u.matricula LIKE :matricula';
+            $params[':matricula'] = '%' . trim((string) $filters['matricula']) . '%';
+        }
+
+        if (trim((string) ($filters['name'] ?? '')) !== '') {
+            $conditions[] = 'u.name LIKE :name';
+            $params[':name'] = '%' . trim((string) $filters['name']) . '%';
+        }
+
+        if (trim((string) ($filters['cpf'] ?? '')) !== '') {
+            $conditions[] = 'u.cpf LIKE :cpf';
+            $params[':cpf'] = '%' . trim((string) $filters['cpf']) . '%';
+        }
+
+        if (trim((string) ($filters['groupname'] ?? '')) !== '') {
+            $conditions[] = 'ug.groupname = :groupname';
+            $params[':groupname'] = trim((string) $filters['groupname']);
+        }
+
+        $whereSql = $conditions !== [] ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+        return [$whereSql, $params];
     }
 
     private function getConnection(): PDO

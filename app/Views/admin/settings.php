@@ -1,9 +1,9 @@
 <div class="mb-10">
     <h1 class="text-3xl font-bold text-slate-800">Configurações</h1>
-    <p class="text-slate-500">Parâmetros globais e customização visual do portal</p>
+    <p class="text-slate-500">Customização visual do portal</p>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+<div class="grid grid-cols-1 gap-8">
     <!-- Banner Management -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
         <div class="p-6 border-b border-slate-100 bg-slate-50">
@@ -50,18 +50,6 @@
                 </div>
             </form>
 
-            <div class="border-t pt-6">
-                <label class="block text-sm font-semibold text-slate-700 mb-2">URL Atual do Banner</label>
-                <form action="/admin/settings" method="POST" class="flex gap-2">
-                    <input type="text" name="banner_url" value="<?= htmlspecialchars($settings['banner_url'] ?? '') ?>" 
-                           class="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:outline-none">
-                    <button type="submit" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition">
-                        Atualizar
-                    </button>
-                    <input type="hidden" name="global_redir_url" value="<?= htmlspecialchars($settings['global_redir_url'] ?? '') ?>">
-                </form>
-            </div>
-
             <?php if (!empty($settings['banner_url'])): ?>
                 <div class="border-t pt-6">
                     <span class="text-xs font-bold text-slate-400 uppercase mb-3 block">Banner Ativo (Proporção 9:16):</span>
@@ -71,33 +59,6 @@
                 </div>
             <?php endif; ?>
         </div>
-    </div>
-
-    <!-- General Settings -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="p-6 border-b border-slate-100 bg-slate-50">
-            <h2 class="font-bold text-slate-800 flex items-center">
-                <i class="fas fa-cog mr-2 text-blue-500"></i> Geral
-            </h2>
-        </div>
-        
-        <form action="/admin/settings" method="POST" class="p-8 space-y-6">
-            <input type="hidden" name="banner_url" value="<?= htmlspecialchars($settings['banner_url'] ?? '') ?>">
-
-            <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-2">URL de Redirecionamento Global</label>
-                <input type="text" name="global_redir_url" value="<?= htmlspecialchars($settings['global_redir_url'] ?? '') ?>"
-                       placeholder="https://www.suaempresa.com.br"
-                       class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                <p class="mt-2 text-xs text-slate-400">Página exibida após o login caso o perfil do usuário não defina uma URL específica.</p>
-            </div>
-
-            <div class="pt-6 border-t flex justify-end">
-                <button type="submit" class="w-full lg:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition shadow-md">
-                    Salvar Configurações Gerais
-                </button>
-            </div>
-        </form>
     </div>
 </div>
 

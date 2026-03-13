@@ -218,10 +218,26 @@ final class AdminController
     public function users(): void
     {
         $this->checkAuth();
-        $users = $this->radiusRepository->getUsers();
+        $filters = [
+            'matricula' => trim((string) ($_GET['matricula'] ?? '')),
+            'name' => trim((string) ($_GET['name'] ?? '')),
+            'cpf' => trim((string) ($_GET['cpf'] ?? '')),
+            'groupname' => trim((string) ($_GET['groupname'] ?? '')),
+        ];
+        $page = max(1, (int) ($_GET['page'] ?? 1));
+        $userSearch = $this->radiusRepository->searchUsers($filters, $page, 50);
         $profiles = $this->radiusRepository->getProfiles();
+
         $this->render('users', [
-            'users' => $users,
+            'users' => $userSearch['data'],
+            'userFilters' => $filters,
+            'hasActiveFilters' => $this->hasActiveUserFilters($filters),
+            'pagination' => [
+                'page' => $userSearch['page'],
+                'per_page' => $userSearch['per_page'],
+                'total' => $userSearch['total'],
+                'pages' => $userSearch['pages'],
+            ],
             'profiles' => $profiles,
             'title' => 'Gestão de Usuários'
         ]);
@@ -232,6 +248,7 @@ final class AdminController
         $this->checkAuth();
         $username = $_POST['username'] ?? '';
         $groupname = $_POST['groupname'] ?? '';
+        $returnQuery = trim((string) ($_POST['return_query'] ?? ''));
 
         if (!empty($username) && !empty($groupname)) {
             $this->radiusRepository->setUserGroup($username, $groupname);
@@ -240,7 +257,12 @@ final class AdminController
             $_SESSION['error'] = 'Dados inválidos.';
         }
 
-        header('Location: /admin/users');
+        $redirect = '/admin/users';
+        if ($returnQuery !== '') {
+            $redirect .= '?' . ltrim($returnQuery, '?');
+        }
+
+        header('Location: ' . $redirect);
         exit;
     }
 
@@ -318,5 +340,16 @@ final class AdminController
         }
 
         return is_writable($directory);
+    }
+
+    private function hasActiveUserFilters(array $filters): bool
+    {
+        foreach ($filters as $value) {
+            if (trim((string) $value) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
