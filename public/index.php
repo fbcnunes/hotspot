@@ -40,6 +40,7 @@ return match (true) {
     $path === '/admin/settings' && $_SERVER['REQUEST_METHOD'] === 'GET' => $adminController->settings(),
     $path === '/admin/settings' && $_SERVER['REQUEST_METHOD'] === 'POST' => $adminController->saveSettings(),
     $path === '/admin/settings/upload-banner' && $_SERVER['REQUEST_METHOD'] === 'POST' => $adminController->uploadBanner(),
+    $path === '/banner.png' && $_SERVER['REQUEST_METHOD'] === 'GET' => $adminController->banner(),
     $path === '/admin/logs' => $adminController->logs(),
     $path === '/admin/logs/view' => $adminController->viewLog(),
     $path === '/admin/users' => $adminController->users(),

@@ -9,16 +9,16 @@ use RuntimeException;
 final class ImageService
 {
     /**
-     * Process an image to a 4:5 aspect ratio (1080x1350).
+     * Process an image to a 9:16 aspect ratio (1080x1920).
      * 
      * @param string $sourcePath Path to the source image file
      * @param string $destPath Path to save the processed image
      * @param int $targetWidth Target width in pixels
      * @return bool
      */
-    public function processTo4by5(string $sourcePath, string $destPath, int $targetWidth = 1080): bool
+    public function processTo9by16(string $sourcePath, string $destPath, int $targetWidth = 1080): bool
     {
-        $targetHeight = (int)($targetWidth * 5 / 4);
+        $targetHeight = (int)($targetWidth * 16 / 9);
         
         $info = getimagesize($sourcePath);
         if (!$info) {
@@ -52,18 +52,18 @@ final class ImageService
 
         error_log("[hotspot] ImageService: processing image {$width}x{$height}, type $type");
 
-        // Calculate crop dimensions for 4:5 ratio
+        // Calculate crop dimensions for 9:16 ratio
         $currentRatio = $width / $height;
-        $targetRatio = 4 / 5;
+        $targetRatio = 9 / 16;
 
         if ($currentRatio > $targetRatio) {
-            // Wider than 4:5 - crop sides
+            // Wider than 9:16 - crop sides
             $cropHeight = $height;
             $cropWidth = (int)($height * $targetRatio);
             $x = (int)(($width - $cropWidth) / 2);
             $y = 0;
         } else {
-            // Taller than 4:5 - crop top/bottom
+            // Taller than 9:16 - crop top/bottom
             $cropWidth = $width;
             $cropHeight = (int)($width / $targetRatio);
             $x = 0;

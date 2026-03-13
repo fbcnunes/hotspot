@@ -3,7 +3,7 @@
  * pfSense Captive Portal - Immersive Layout Version
  * Este arquivo deve ser carregado no Gerenciador de Arquivos do pfSense (ou usado como index.php)
  */
-$apiUrl = 'http://192.168.121.10/api/check';
+$apiUrl = 'http://10.10.0.51/api/check';
 $token = 'change-me'; // O mesmo token configurado no .env do servidor
 ?>
 <!doctype html>
@@ -23,46 +23,55 @@ $token = 'change-me'; // O mesmo token configurado no .env do servidor
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
         }
         body, html {
-            height: 100%;
+            min-height: 100%;
             margin: 0;
-            background-color: #f1f5f9; /* Light slate background */
+            background:
+                radial-gradient(circle at top, #dbeafe 0%, #f8fafc 38%, #e2e8f0 100%);
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 16px;
+            padding: 18px;
         }
         .main-card {
             background: #ffffff;
             width: 100%;
-            max-width: 440px;
+            max-width: 980px;
             border-radius: 2rem;
             overflow: hidden;
             box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15);
             display: flex;
             flex-direction: column;
+            min-height: min(92vh, 820px);
         }
         .banner-container {
             width: 100%;
-            aspect-ratio: 4 / 5;
+            aspect-ratio: 9 / 16;
             background: #0f172a;
             position: relative;
             overflow: hidden;
             display: flex;
             align-items: center;
             justify-content: center;
+            min-height: 320px;
         }
         #banner-img-element {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
             display: none;
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
         }
         .banner-placeholder {
-            color: #475569;
+            color: #cbd5e1;
             font-weight: 600;
+            text-align: center;
+            padding: 1rem;
         }
         .form-area {
             padding: 2.5rem 2rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         
         .h3 { margin: 0; font-size: 1.5rem; font-weight: 700; color: #0f172a; text-align: center; }
@@ -122,6 +131,38 @@ $token = 'change-me'; // O mesmo token configurado no .env do servidor
             color: #94a3b8;
             font-size: 0.75rem;
             text-align: center;
+        }
+        @media (min-width: 860px) {
+            .main-card {
+                flex-direction: row;
+            }
+            .banner-container {
+                width: min(42%, 360px);
+                min-height: auto;
+                aspect-ratio: auto;
+            }
+            .form-area {
+                flex: 1;
+                padding: 3rem;
+            }
+        }
+        @media (max-width: 480px) {
+            body, html {
+                padding: 10px;
+            }
+            .main-card {
+                border-radius: 1.5rem;
+                min-height: auto;
+            }
+            .banner-container {
+                min-height: 260px;
+            }
+            .form-area {
+                padding: 1.5rem 1.25rem 1.75rem;
+            }
+            .btn-primary {
+                padding: 14px;
+            }
         }
     </style>
 </head>
@@ -241,4 +282,3 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
-

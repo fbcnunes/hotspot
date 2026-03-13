@@ -9,6 +9,9 @@ use App\Services\RadiusRepository;
 
 final class AdminController
 {
+    private const BANNER_FILENAME = 'banner.png';
+    private const BANNER_ROUTE = '/banner.png';
+
     private RadiusRepository $radiusRepository;
 
     public function __construct(RadiusRepository $radiusRepository)
@@ -147,22 +150,15 @@ final class AdminController
         }
 
         $tmpPath = $_FILES['banner_file']['tmp_name'];
-        $destPath = __DIR__ . '/../../public/assets/images/banner.png';
-        
-        if (!is_dir(dirname($destPath))) {
-            mkdir(dirname($destPath), 0755, true);
-        }
 
         try {
+            $destPath = $this->resolveWritableBannerPath();
             $imageService = new \App\Services\ImageService();
-            $imageService->processTo4by5($tmpPath, $destPath, 1080);
-            
-            $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
-            $host = $_SERVER['HTTP_HOST'] ?? '192.168.121.10';
-            $localUrl = "{$protocol}://{$host}/assets/images/banner.png";
-            
+            $imageService->processTo9by16($tmpPath, $destPath, 1080);
+
+            $localUrl = $this->buildBannerUrl();
             $this->radiusRepository->updateSetting('banner_url', $localUrl);
-            $_SESSION['success'] = 'Banner enviado e processado com sucesso (4:5)!';
+            $_SESSION['success'] = 'Banner enviado e processado com sucesso (1080x1920)!';
         } catch (\Exception $e) {
             error_log('[hotspot] Image processing failed: ' . $e->getMessage());
             $_SESSION['error'] = 'Erro ao processar imagem: ' . $e->getMessage();
@@ -170,6 +166,21 @@ final class AdminController
 
         header('Location: /admin/settings');
         exit;
+    }
+
+    public function banner(): void
+    {
+        $bannerPath = $this->resolveExistingBannerPath();
+        if ($bannerPath === null || !is_file($bannerPath)) {
+            http_response_code(404);
+            echo 'Banner não encontrado.';
+            return;
+        }
+
+        header('Content-Type: image/png');
+        header('Content-Length: ' . (string) filesize($bannerPath));
+        header('Cache-Control: public, max-age=300');
+        readfile($bannerPath);
     }
 
     public function logs(): void
@@ -254,5 +265,58 @@ final class AdminController
             echo "View [{$view}] não encontrada.";
         }
         require __DIR__ . '/../Views/admin/layout/footer.php';
+    }
+
+    private function buildBannerUrl(): string
+    {
+        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'] ?? '192.168.121.10';
+
+        return "{$protocol}://{$host}" . self::BANNER_ROUTE;
+    }
+
+    private function resolveWritableBannerPath(): string
+    {
+        foreach ($this->bannerStorageDirectories() as $directory) {
+            if ($this->ensureWritableDirectory($directory)) {
+                return $directory . '/' . self::BANNER_FILENAME;
+            }
+        }
+
+        throw new \RuntimeException(
+            'Nenhum diretório gravável foi encontrado para salvar o banner. Verifique as permissões de "storage/" ou do diretório temporário do PHP.'
+        );
+    }
+
+    private function resolveExistingBannerPath(): ?string
+    {
+        foreach ($this->bannerStorageDirectories() as $directory) {
+            $path = $directory . '/' . self::BANNER_FILENAME;
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function bannerStorageDirectories(): array
+    {
+        return [
+            __DIR__ . '/../../storage/banners',
+            rtrim(sys_get_temp_dir(), '/\\') . '/hotspot',
+        ];
+    }
+
+    private function ensureWritableDirectory(string $directory): bool
+    {
+        if (!is_dir($directory) && !@mkdir($directory, 0755, true) && !is_dir($directory)) {
+            return false;
+        }
+
+        return is_writable($directory);
     }
 }

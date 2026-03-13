@@ -16,7 +16,7 @@
             <!-- Upload Form -->
             <form action="/admin/settings/upload-banner" method="POST" enctype="multipart/form-data" class="space-y-6">
                 <div>
-                    <label class="block text-sm font-semibold text-slate-700 mb-2">Novo Banner (Auto-ajuste 4:5)</label>
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Novo Banner (Auto-ajuste 9:16 - 1080x1920)</label>
                     <div class="flex items-center justify-center w-full">
                         <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition relative overflow-hidden">
                             <div id="upload-placeholder" class="flex flex-col items-center justify-center pt-5 pb-6">
@@ -37,7 +37,7 @@
                 <div id="upload-actions" class="hidden flex flex-col gap-2">
                     <p class="text-xs text-blue-600 font-medium flex items-center">
                         <i class="fas fa-info-circle mr-1"></i> 
-                        A imagem acima é apenas um preview. O corte central 4:5 será aplicado ao salvar.
+                        A imagem acima é apenas um preview. O corte central em 9:16 (1080x1920) será aplicado ao salvar.
                     </p>
                     <div class="flex gap-2">
                         <button type="submit" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 transition shadow-md">
@@ -64,8 +64,8 @@
 
             <?php if (!empty($settings['banner_url'])): ?>
                 <div class="border-t pt-6">
-                    <span class="text-xs font-bold text-slate-400 uppercase mb-3 block">Banner Ativo (Proporção 4:5):</span>
-                    <div class="relative w-full max-w-[200px] mx-auto overflow-hidden rounded-lg shadow-md border border-slate-200 aspect-[4/5]">
+                    <span class="text-xs font-bold text-slate-400 uppercase mb-3 block">Banner Ativo (Proporção 9:16):</span>
+                    <div class="relative w-full max-w-[200px] mx-auto overflow-hidden rounded-lg shadow-md border border-slate-200 aspect-[9/16]">
                         <img src="<?= htmlspecialchars($settings['banner_url']) ?>?t=<?= time() ?>" alt="Banner Ativo" class="absolute inset-0 w-full h-full object-cover">
                     </div>
                 </div>

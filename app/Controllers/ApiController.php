@@ -117,21 +117,26 @@ final class ApiController
     private function applyCors(): void
     {
         $configuredOrigins = trim((string)(Config::get('CORS_ALLOW_ORIGINS', '*') ?? '*'));
-        if ($configuredOrigins !== '' && strcasecmp($configuredOrigins, 'none') !== 0) {
-            $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
-            $originToSend = $this->resolveAllowedOrigin($configuredOrigins, $requestOrigin);
-            if ($originToSend !== '') {
-                // Use true to replace any existing header of the same name
-                header('Access-Control-Allow-Origin: ' . $originToSend, true);
-                if ($originToSend !== '*') {
-                    header('Vary: Origin', true);
-                }
+        if ($configuredOrigins === '' || strcasecmp($configuredOrigins, 'none') === 0) {
+            return;
+        }
+
+        $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+        $originToSend = $this->resolveAllowedOrigin($configuredOrigins, $requestOrigin);
+        if ($originToSend !== '') {
+            header('Access-Control-Allow-Origin: ' . $originToSend, true);
+            if ($originToSend !== '*') {
+                header('Vary: Origin', true);
             }
         }
 
         header('Access-Control-Allow-Headers: ' . $this->resolveAllowedHeaders(), true);
         header('Access-Control-Allow-Methods: POST, GET, OPTIONS', true);
         header('Access-Control-Max-Age: 600', true);
+
+        if ($this->isPrivateNetworkPreflight()) {
+            header('Access-Control-Allow-Private-Network: true', true);
+        }
     }
 
     private function resolveAllowedOrigin(string $configuredOrigins, string $requestOrigin): string
@@ -161,5 +166,11 @@ final class ApiController
     private function generateRequestId(): string
     {
         return bin2hex(random_bytes(16));
+    }
+
+    private function isPrivateNetworkPreflight(): bool
+    {
+        $requestedPrivateNetwork = $_SERVER['HTTP_ACCESS_CONTROL_REQUEST_PRIVATE_NETWORK'] ?? '';
+        return strcasecmp($requestedPrivateNetwork, 'true') === 0;
     }
 }
