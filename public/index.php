@@ -43,8 +43,12 @@ return match (true) {
     $path === '/banner.png' && $_SERVER['REQUEST_METHOD'] === 'GET' => $adminController->banner(),
     $path === '/admin/logs' => $adminController->logs(),
     $path === '/admin/logs/view' => $adminController->viewLog(),
-    $path === '/admin/users' => $adminController->users(),
-    $path === '/admin/users/save-group' => $adminController->saveUserGroup(),
+    $path === '/admin/users' && $_SERVER['REQUEST_METHOD'] === 'GET' => $adminController->users(),
+    $path === '/admin/users/sessions' && $_SERVER['REQUEST_METHOD'] === 'GET' => $adminController->userSessions(),
+    $path === '/admin/users/save-group' && $_SERVER['REQUEST_METHOD'] === 'POST' => $adminController->saveUserGroup(),
+    $path === '/admin/users/disconnect' && $_SERVER['REQUEST_METHOD'] === 'POST' => $adminController->disconnectUser(),
+    $path === '/admin/users/unblock' && $_SERVER['REQUEST_METHOD'] === 'POST' => $adminController->unblockUser(),
+    $path === '/admin/sessions/disconnect' && $_SERVER['REQUEST_METHOD'] === 'POST' => $adminController->disconnectSession(),
     default => notFound(),
 };
 

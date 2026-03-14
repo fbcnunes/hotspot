@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Config\Config;
+use App\Services\AuditService;
 use App\Services\RadiusRepository;
+use App\Utils\Normalizer;
 
 final class AdminController
 {
@@ -223,6 +225,16 @@ final class AdminController
             'name' => trim((string) ($_GET['name'] ?? '')),
             'cpf' => trim((string) ($_GET['cpf'] ?? '')),
             'groupname' => trim((string) ($_GET['groupname'] ?? '')),
+            'blocked_status' => $this->normalizeFilterValue(
+                (string) ($_GET['blocked_status'] ?? 'all'),
+                ['all', 'blocked', 'unblocked'],
+                'all'
+            ),
+            'session_status' => $this->normalizeFilterValue(
+                (string) ($_GET['session_status'] ?? 'all'),
+                ['all', 'active', 'inactive'],
+                'all'
+            ),
         ];
         $page = max(1, (int) ($_GET['page'] ?? 1));
         $userSearch = $this->radiusRepository->searchUsers($filters, $page, 50);
@@ -264,6 +276,178 @@ final class AdminController
 
         header('Location: ' . $redirect);
         exit;
+    }
+
+    public function disconnectUser(): void
+    {
+        $this->checkAuth();
+        $returnQuery = trim((string) ($_POST['return_query'] ?? ''));
+        $username = $this->resolveAndValidateUsername((string) ($_POST['username'] ?? ''));
+        $originIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $requestId = $this->generateRequestId();
+
+        if ($username === null) {
+            $_SESSION['error'] = 'Usuário inválido para desautenticar.';
+            $this->redirectUsers($returnQuery);
+        }
+
+        try {
+            $result = $this->radiusRepository->disconnectUser($username);
+            $message = $this->buildDisconnectMessage($username, $result);
+            $_SESSION['success'] = $message;
+
+            $audit = new AuditService();
+            $audit->record(
+                $username,
+                'admin_disconnect',
+                $originIp,
+                $message,
+                $requestId
+            );
+        } catch (\Throwable $e) {
+            error_log(sprintf('[hotspot] disconnectUser() failed for "%s": %s', $username, $e->getMessage()));
+            $_SESSION['error'] = 'Falha ao desautenticar usuário.';
+            try {
+                $audit = new AuditService();
+                $audit->record(
+                    $username,
+                    'admin_disconnect_error',
+                    $originIp,
+                    'exception: ' . substr($e->getMessage(), 0, 120),
+                    $requestId
+                );
+            } catch (\Throwable $auditError) {
+                error_log('[hotspot] Failed to record disconnect audit: ' . $auditError->getMessage());
+            }
+        }
+
+        $this->redirectUsers($returnQuery);
+    }
+
+    public function userSessions(): void
+    {
+        $this->checkAuth();
+        $username = $this->resolveAndValidateUsername((string) ($_GET['username'] ?? ''));
+
+        if ($username === null) {
+            $this->json([
+                'status' => 'error',
+                'message' => 'Usuário inválido.',
+            ], 422);
+            return;
+        }
+
+        try {
+            $sessions = $this->radiusRepository->getActiveSessionsByUsername($username);
+            $this->json([
+                'status' => 'ok',
+                'sessions' => $sessions,
+            ], 200);
+        } catch (\Throwable $e) {
+            error_log(sprintf('[hotspot] userSessions() failed for "%s": %s', $username, $e->getMessage()));
+            $this->json([
+                'status' => 'error',
+                'message' => 'Falha ao consultar sessões.',
+            ], 500);
+        }
+    }
+
+    public function disconnectSession(): void
+    {
+        $this->checkAuth();
+        $returnQuery = trim((string) ($_POST['return_query'] ?? ''));
+        $radacctId = (int) ($_POST['radacctid'] ?? 0);
+        $originIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $requestId = $this->generateRequestId();
+
+        if ($radacctId <= 0) {
+            $_SESSION['error'] = 'Sessão inválida para desconexão.';
+            $this->redirectUsers($returnQuery);
+        }
+
+        try {
+            $result = $this->radiusRepository->disconnectSessionByRadacctId($radacctId);
+            if (($result['already_closed'] ?? false) === true) {
+                $message = "Sessão {$radacctId} já estava encerrada.";
+            } elseif (($result['success'] ?? false) === true) {
+                $message = "Sessão {$radacctId} desconectada com sucesso.";
+            } else {
+                $message = "Não foi possível desconectar a sessão {$radacctId} imediatamente.";
+            }
+
+            $_SESSION['success'] = $message;
+            $audit = new AuditService();
+            $audit->record(
+                (string) $radacctId,
+                'admin_session_disconnect',
+                $originIp,
+                $message,
+                $requestId
+            );
+        } catch (\Throwable $e) {
+            error_log(sprintf('[hotspot] disconnectSession() failed for "%d": %s', $radacctId, $e->getMessage()));
+            $_SESSION['error'] = 'Falha ao desconectar sessão.';
+            try {
+                $audit = new AuditService();
+                $audit->record(
+                    (string) $radacctId,
+                    'admin_session_disconnect_error',
+                    $originIp,
+                    'exception: ' . substr($e->getMessage(), 0, 120),
+                    $requestId
+                );
+            } catch (\Throwable $auditError) {
+                error_log('[hotspot] Failed to record session disconnect audit: ' . $auditError->getMessage());
+            }
+        }
+
+        $this->redirectUsers($returnQuery);
+    }
+
+    public function unblockUser(): void
+    {
+        $this->checkAuth();
+        $returnQuery = trim((string) ($_POST['return_query'] ?? ''));
+        $username = $this->resolveAndValidateUsername((string) ($_POST['username'] ?? ''));
+        $originIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $requestId = $this->generateRequestId();
+
+        if ($username === null) {
+            $_SESSION['error'] = 'Usuário inválido para desbloquear.';
+            $this->redirectUsers($returnQuery);
+        }
+
+        try {
+            $this->radiusRepository->unblockUserAuth($username);
+            $message = "Bloqueio removido para {$username}. Nova autenticação permitida.";
+            $_SESSION['success'] = $message;
+
+            $audit = new AuditService();
+            $audit->record(
+                $username,
+                'admin_unblock',
+                $originIp,
+                $message,
+                $requestId
+            );
+        } catch (\Throwable $e) {
+            error_log(sprintf('[hotspot] unblockUser() failed for "%s": %s', $username, $e->getMessage()));
+            $_SESSION['error'] = 'Falha ao remover bloqueio do usuário.';
+            try {
+                $audit = new AuditService();
+                $audit->record(
+                    $username,
+                    'admin_unblock_error',
+                    $originIp,
+                    'exception: ' . substr($e->getMessage(), 0, 120),
+                    $requestId
+                );
+            } catch (\Throwable $auditError) {
+                error_log('[hotspot] Failed to record unblock audit: ' . $auditError->getMessage());
+            }
+        }
+
+        $this->redirectUsers($returnQuery);
     }
 
     private function checkAuth(): void
@@ -344,12 +528,94 @@ final class AdminController
 
     private function hasActiveUserFilters(array $filters): bool
     {
-        foreach ($filters as $value) {
+        foreach (['matricula', 'name', 'cpf', 'groupname'] as $key) {
+            $value = $filters[$key] ?? '';
             if (trim((string) $value) !== '') {
                 return true;
             }
         }
 
+        if (($filters['blocked_status'] ?? 'all') !== 'all') {
+            return true;
+        }
+
+        if (($filters['session_status'] ?? 'all') !== 'all') {
+            return true;
+        }
+
         return false;
+    }
+
+    private function resolveAndValidateUsername(string $username): ?string
+    {
+        $normalized = Normalizer::normalizeUsername($username);
+        if ($normalized === '' || !Normalizer::isValidUsername($normalized)) {
+            return null;
+        }
+
+        return $normalized;
+    }
+
+    private function redirectUsers(string $returnQuery): void
+    {
+        $redirect = '/admin/users';
+        if ($returnQuery !== '') {
+            $redirect .= '?' . ltrim($returnQuery, '?');
+        }
+
+        header('Location: ' . $redirect);
+        exit;
+    }
+
+    private function generateRequestId(): string
+    {
+        return bin2hex(random_bytes(16));
+    }
+
+    private function buildDisconnectMessage(string $username, array $result): string
+    {
+        if (!($result['blocked'] ?? false)) {
+            return "Usuário {$username}: não foi possível aplicar bloqueio.";
+        }
+
+        if (($result['has_active_session'] ?? false) && ($result['disconnect_success'] ?? false)) {
+            $activeSessionCount = (int) ($result['active_session_count'] ?? 0);
+            if ($activeSessionCount > 1) {
+                return "Usuário {$username} bloqueado e {$activeSessionCount} sessões ativas foram desconectadas.";
+            }
+
+            return "Usuário {$username} desautenticado e bloqueado com sucesso.";
+        }
+
+        if (($result['has_active_session'] ?? false)) {
+            $activeSessionCount = (int) ($result['active_session_count'] ?? 0);
+            $successCount = (int) ($result['disconnect_success_count'] ?? 0);
+            if ($activeSessionCount > 1 && $successCount > 0) {
+                return "Usuário {$username} bloqueado. {$successCount} de {$activeSessionCount} sessões foram desconectadas; as demais cairão na próxima reautenticação.";
+            }
+
+            return "Usuário {$username} bloqueado. A sessão ativa será encerrada na próxima reautenticação.";
+        }
+
+        return "Usuário {$username} bloqueado. Próximo login será negado até desbloqueio.";
+    }
+
+    /**
+     * @param list<string> $allowed
+     */
+    private function normalizeFilterValue(string $value, array $allowed, string $default): string
+    {
+        $value = trim($value);
+        return in_array($value, $allowed, true) ? $value : $default;
+    }
+
+    /**
+     * @param array<string,mixed> $data
+     */
+    private function json(array $data, int $status): void
+    {
+        http_response_code($status);
+        header('Content-Type: application/json');
+        echo json_encode($data, JSON_UNESCAPED_UNICODE);
     }
 }

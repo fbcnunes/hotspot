@@ -103,11 +103,30 @@
             color: var(--muted);
             font-size: 0.85rem;
         }
+        .banner-container {
+            width: 100%;
+            aspect-ratio: 9 / 16;
+            background: #0f172a;
+            border-radius: 1rem 1rem 0 0;
+            overflow: hidden;
+            margin: -32px -32px 24px;
+            min-height: 260px;
+        }
+        .banner-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
+            display: block;
+        }
     </style>
 </head>
 <body>
 <div class="container">
     <div class="login-card">
+        <div class="banner-container">
+            <img src="https://placehold.co/720x1280" alt="Banner">
+        </div>
         <h1 class="portal-title">Portal de Acesso</h1>
         <div id="cp-error" class="alert alert-danger d-none" role="alert"></div>
         <form id="cp-form" method="post" action="$PORTAL_ACTION$">

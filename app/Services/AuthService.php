@@ -28,6 +28,14 @@ final class AuthService
             return ['status' => 'deny', 'message' => 'Usuário inválido'];
         }
 
+        if ($this->radiusRepository->isUserAuthBlocked($normalized)) {
+            $this->auditService->record($normalized, 'negado', $originIp, 'usuario_bloqueado', $requestId);
+            return [
+                'status' => 'deny',
+                'message' => 'Usuário com erro. Procure o suporte para liberação.',
+            ];
+        }
+
         $match = $this->sqlServerRepository->findByLogin($normalized);
         if (!$match) {
             $this->auditService->record($normalized, 'negado', $originIp, 'usuario_nao_autorizado', $requestId);

@@ -28,6 +28,13 @@ Implementação PHP em arquitetura MVC simples para atuar como pré-validador do
    - `PORTAL_TOKEN` – token curto usado pelo JavaScript no pfSense.
    - `ALLOWED_IP` – IP do pfSense (default `192.168.121.1`).
    - `CORS_ALLOW_ORIGINS` – `*` (default) ou lista separada por vírgula com as origens autorizadas; defina `none` para delegar o CORS ao seu proxy/webserver.
+   - `RADIUS_DISCONNECT_SECRET` – segredo de CoA/Disconnect no NAS para permitir desconexão imediata de sessão.
+   - `RADIUS_DISCONNECT_PORT` – porta de CoA/Disconnect no NAS (geralmente `3799`).
+   - `RADIUS_DISCONNECT_TIMEOUT` e `RADIUS_DISCONNECT_RETRIES` – timeout/tentativas do `radclient`.
+   - `RADIUS_RADCLIENT_BIN` – caminho do binário `radclient`.
+   - `PFSENSE_HOST`, `PFSENSE_SSH_PORT`, `PFSENSE_SSH_USER`, `PFSENSE_SSH_PASSWORD` – acesso SSH ao pfSense para executar a desconexão nativa do Captive Portal.
+   - `PFSENSE_SSH_TIMEOUT` – timeout do comando SSH.
+   - `PFSENSE_CAPTIVE_PORTAL_ZONE` – zona do Captive Portal usada na desconexão nativa.
 
 2. Configure o VirtualHost/Apache para apontar `DocumentRoot` para `public/`.
 

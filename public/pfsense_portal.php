@@ -57,7 +57,8 @@ $token = 'change-me'; // O mesmo token configurado no .env do servidor
         #banner-img-element {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: cover;
+            object-position: center;
             display: none;
             background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
         }
@@ -162,6 +163,11 @@ $token = 'change-me'; // O mesmo token configurado no .env do servidor
             }
             .btn-primary {
                 padding: 14px;
+            }
+        }
+        @media (max-width: 859px) {
+            #banner-img-element {
+                object-fit: contain;
             }
         }
     </style>

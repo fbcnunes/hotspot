@@ -159,7 +159,23 @@ final class RadiusRepository
         $total = (int) $countStmt->fetchColumn();
 
         $stmt = $pdo->prepare(
-            "SELECT u.*, ug.groupname
+            "SELECT u.*, ug.groupname,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM radcheck rc
+                            WHERE rc.username = u.username
+                              AND rc.attribute = 'Auth-Type'
+                              AND rc.value = 'Reject'
+                        ) THEN 1
+                        ELSE 0
+                    END AS is_blocked,
+                    (
+                        SELECT COUNT(*)
+                        FROM radacct ra
+                        WHERE ra.username = u.username
+                          AND ra.acctstoptime IS NULL
+                    ) AS active_sessions_count
              FROM hotspot_users u
              LEFT JOIN radusergroup ug ON u.username = ug.username
              {$whereSql}
@@ -182,6 +198,150 @@ final class RadiusRepository
             'per_page' => $perPage,
             'pages' => $total > 0 ? (int) ceil($total / $perPage) : 0,
         ];
+    }
+
+    public function getActiveSessionByUsername(string $username): ?array
+    {
+        $pdo = $this->getConnection();
+        $stmt = $pdo->prepare(
+            "SELECT radacctid, username, nasipaddress, framedipaddress, acctsessionid, acctstarttime
+             FROM radacct
+             WHERE username = :username
+               AND acctstoptime IS NULL
+             ORDER BY acctstarttime DESC
+             LIMIT 1"
+        );
+        $stmt->execute(['username' => $username]);
+        $session = $stmt->fetch();
+
+        return $session === false ? null : $session;
+    }
+
+    public function getActiveSessionsByUsername(string $username): array
+    {
+        $pdo = $this->getConnection();
+        $stmt = $pdo->prepare(
+            "SELECT radacctid, username, nasipaddress, framedipaddress, acctsessionid, acctstarttime
+             FROM radacct
+             WHERE username = :username
+               AND acctstoptime IS NULL
+             ORDER BY acctstarttime DESC"
+        );
+        $stmt->execute(['username' => $username]);
+
+        return $stmt->fetchAll();
+    }
+
+    public function blockUserAuth(string $username): void
+    {
+        $pdo = $this->getConnection();
+        try {
+            $pdo->beginTransaction();
+            $deleteStmt = $pdo->prepare(
+                "DELETE FROM radcheck
+                 WHERE username = :username
+                   AND attribute = 'Auth-Type'"
+            );
+            $deleteStmt->execute(['username' => $username]);
+
+            $insertStmt = $pdo->prepare(
+                "INSERT INTO radcheck (username, attribute, op, value)
+                 VALUES (:username, 'Auth-Type', ':=', 'Reject')"
+            );
+            $insertStmt->execute(['username' => $username]);
+            $pdo->commit();
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw new RuntimeException('Erro ao bloquear autenticação do usuário: ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    public function unblockUserAuth(string $username): void
+    {
+        $pdo = $this->getConnection();
+        $stmt = $pdo->prepare(
+            "DELETE FROM radcheck
+             WHERE username = :username
+               AND attribute = 'Auth-Type'
+               AND value = 'Reject'"
+        );
+        $stmt->execute(['username' => $username]);
+    }
+
+    public function disconnectUser(string $username): array
+    {
+        $sessions = $this->getActiveSessionsByUsername($username);
+        $hasActiveSession = $sessions !== [];
+        $disconnectAttempted = false;
+        $disconnectSuccess = false;
+        $disconnectSuccessCount = 0;
+
+        if ($hasActiveSession) {
+            $disconnectAttempted = true;
+            foreach ($sessions as $session) {
+                if ($this->tryNasDisconnect($session)) {
+                    $disconnectSuccessCount++;
+                }
+            }
+            $disconnectSuccess = $disconnectSuccessCount === count($sessions);
+        }
+
+        $this->blockUserAuth($username);
+
+        return [
+            'blocked' => true,
+            'disconnect_attempted' => $disconnectAttempted,
+            'disconnect_success' => $disconnectSuccess,
+            'has_active_session' => $hasActiveSession,
+            'active_session_count' => count($sessions),
+            'disconnect_success_count' => $disconnectSuccessCount,
+        ];
+    }
+
+    public function disconnectSessionByRadacctId(int $radacctId): array
+    {
+        $pdo = $this->getConnection();
+        $stmt = $pdo->prepare(
+            "SELECT radacctid, username, nasipaddress, framedipaddress, acctsessionid, acctstarttime
+             FROM radacct
+             WHERE radacctid = :radacctid
+               AND acctstoptime IS NULL
+             LIMIT 1"
+        );
+        $stmt->execute(['radacctid' => $radacctId]);
+        $session = $stmt->fetch();
+
+        if ($session === false) {
+            return [
+                'attempted' => false,
+                'success' => false,
+                'already_closed' => true,
+            ];
+        }
+
+        return [
+            'attempted' => true,
+            'success' => $this->tryNasDisconnect($session),
+            'already_closed' => false,
+        ];
+    }
+
+    public function isUserAuthBlocked(string $username): bool
+    {
+        $pdo = $this->getConnection();
+        $stmt = $pdo->prepare(
+            "SELECT 1
+             FROM radcheck
+             WHERE username = :username
+               AND attribute = 'Auth-Type'
+               AND value = 'Reject'
+             LIMIT 1"
+        );
+        $stmt->execute(['username' => $username]);
+
+        return (bool) $stmt->fetchColumn();
     }
 
     public function setUserGroup(string $username, string $groupname): void
@@ -339,12 +499,249 @@ final class RadiusRepository
         $stmt->execute(['lock_key' => $lockKey]);
     }
 
+    private function tryNasDisconnect(array $session): bool
+    {
+        $nativeResult = $this->tryPfSenseNativeDisconnect($session);
+        if ($nativeResult !== null) {
+            return $nativeResult;
+        }
+
+        // Fallback para ambientes onde a desconexão nativa do pfSense não estiver configurada.
+        return $this->tryRadiusDisconnect($session);
+    }
+
+    private function tryPfSenseNativeDisconnect(array $session): ?bool
+    {
+        $host = trim((string) Config::get('PFSENSE_HOST', ''));
+        $user = trim((string) Config::get('PFSENSE_SSH_USER', ''));
+        $password = (string) Config::get('PFSENSE_SSH_PASSWORD', '');
+        $zone = trim((string) Config::get('PFSENSE_CAPTIVE_PORTAL_ZONE', ''));
+
+        if ($host === '' || $user === '' || $password === '' || $zone === '') {
+            return null;
+        }
+
+        $sessionId = trim((string) ($session['acctsessionid'] ?? ''));
+        if ($sessionId === '') {
+            error_log('[hotspot] tryPfSenseNativeDisconnect: acctsessionid ausente.');
+            return false;
+        }
+
+        $port = (int) (Config::get('PFSENSE_SSH_PORT', '22') ?? '22');
+        if ($port <= 0 || $port > 65535) {
+            $port = 22;
+        }
+
+        $timeout = (int) (Config::get('PFSENSE_SSH_TIMEOUT', '8') ?? '8');
+        if ($timeout <= 0) {
+            $timeout = 8;
+        }
+
+        $askPassPath = tempnam(sys_get_temp_dir(), 'pfssh-');
+        if ($askPassPath === false) {
+            error_log('[hotspot] tryPfSenseNativeDisconnect: falha ao criar script askpass.');
+            return false;
+        }
+
+        $phpCode = sprintf(
+            'require_once("/etc/inc/config.inc"); require_once("/etc/inc/captiveportal.inc"); $cpzone=%s; $sessionId=%s; $escapedSessionId = SQLite3::escapeString($sessionId); $before = captiveportal_read_db("WHERE sessionid = \'" . $escapedSessionId . "\'"); if (count($before) === 0) { fwrite(STDOUT, "SESSION_NOT_FOUND\n"); exit(2); } captiveportal_disconnect_client($sessionId, 6, "DISCONNECT - ADMIN PORTAL"); $after = captiveportal_read_db("WHERE sessionid = \'" . $escapedSessionId . "\'"); if (count($after) === 0) { fwrite(STDOUT, "DISCONNECT_OK\n"); exit(0); } fwrite(STDOUT, "DISCONNECT_FAILED\n"); exit(1);',
+            var_export($zone, true),
+            var_export($sessionId, true)
+        );
+        $remoteScript = 'php -r ' . escapeshellarg($phpCode);
+
+        $askPassScript = "#!/bin/sh\nprintf '%s\\n' " . escapeshellarg($password) . "\n";
+        file_put_contents($askPassPath, $askPassScript);
+        chmod($askPassPath, 0700);
+
+        $command = sprintf(
+            'env DISPLAY=:0 SSH_ASKPASS=%s SSH_ASKPASS_REQUIRE=force setsid ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/root/.ssh/known_hosts -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o ConnectTimeout=%d -p %d %s@%s %s',
+            escapeshellarg($askPassPath),
+            $timeout,
+            $port,
+            escapeshellarg($user),
+            escapeshellarg($host),
+            escapeshellarg($remoteScript)
+        );
+
+        $result = $this->runProcess($command);
+
+        @unlink($askPassPath);
+
+        $response = trim(strtolower($result['stdout'] . "\n" . $result['stderr']));
+        if ($result['exit_code'] === 0 && str_contains($response, 'disconnect_ok')) {
+            return true;
+        }
+
+        error_log(
+            sprintf(
+                '[hotspot] tryPfSenseNativeDisconnect: falha (exit=%d, host=%s, zone=%s, session=%s). output=%s',
+                $result['exit_code'],
+                $host,
+                $zone,
+                $sessionId,
+                substr(trim($result['stdout'] . ' ' . $result['stderr']), 0, 400)
+            )
+        );
+
+        return false;
+    }
+
+    private function tryRadiusDisconnect(array $session): bool
+    {
+        $nasIp = trim((string) ($session['nasipaddress'] ?? ''));
+        if ($nasIp === '' || filter_var($nasIp, FILTER_VALIDATE_IP) === false) {
+            error_log('[hotspot] tryNasDisconnect: nasipaddress ausente/invalido.');
+            return false;
+        }
+
+        $secret = trim((string) Config::get('RADIUS_DISCONNECT_SECRET', ''));
+        if ($secret === '') {
+            error_log('[hotspot] tryNasDisconnect: RADIUS_DISCONNECT_SECRET nao configurado.');
+            return false;
+        }
+
+        $port = (int) (Config::get('RADIUS_DISCONNECT_PORT', '3799') ?? '3799');
+        if ($port <= 0 || $port > 65535) {
+            $port = 3799;
+        }
+
+        $timeout = (int) (Config::get('RADIUS_DISCONNECT_TIMEOUT', '3') ?? '3');
+        if ($timeout <= 0) {
+            $timeout = 3;
+        }
+
+        $retries = (int) (Config::get('RADIUS_DISCONNECT_RETRIES', '1') ?? '1');
+        if ($retries < 0) {
+            $retries = 1;
+        }
+
+        $radclientBin = trim((string) Config::get('RADIUS_RADCLIENT_BIN', '/usr/bin/radclient'));
+        if ($radclientBin === '') {
+            $radclientBin = '/usr/bin/radclient';
+        }
+
+        $attributes = [];
+        $username = trim((string) ($session['username'] ?? ''));
+        if ($username !== '') {
+            $attributes[] = 'User-Name="' . addcslashes($username, "\\\"") . '"';
+        }
+
+        $acctSessionId = trim((string) ($session['acctsessionid'] ?? ''));
+        if ($acctSessionId !== '') {
+            $attributes[] = 'Acct-Session-Id="' . addcslashes($acctSessionId, "\\\"") . '"';
+        }
+
+        $framedIp = trim((string) ($session['framedipaddress'] ?? ''));
+        if ($framedIp !== '' && filter_var($framedIp, FILTER_VALIDATE_IP) !== false) {
+            $attributes[] = 'Framed-IP-Address=' . $framedIp;
+        }
+
+        if ($username === '' && $acctSessionId === '' && $framedIp === '') {
+            error_log('[hotspot] tryNasDisconnect: sem atributos de sessao para enviar.');
+            return false;
+        }
+
+        // NAS-IP-Address pode causar rejeição/parse em alguns NAS se enviado em Disconnect-Request.
+        // Mantemos o payload mínimo com identificadores de sessão.
+
+        $payload = implode("\n", $attributes) . "\n\n";
+        $target = $nasIp . ':' . $port;
+        $command = sprintf(
+            '%s -x -r %d -t %d %s disconnect %s',
+            escapeshellarg($radclientBin),
+            $retries,
+            $timeout,
+            escapeshellarg($target),
+            escapeshellarg($secret)
+        );
+
+        $spec = [
+            0 => ['pipe', 'w'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $proc = @proc_open($command, $spec, $pipes);
+        if (!is_resource($proc)) {
+            error_log('[hotspot] tryNasDisconnect: falha ao iniciar radclient.');
+            return false;
+        }
+
+        fwrite($pipes[0], $payload);
+        fclose($pipes[0]);
+
+        $stdout = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+
+        $exitCode = proc_close($proc);
+        $response = strtolower((string) ($stdout . "\n" . $stderr));
+
+        if ($exitCode === 0 && (str_contains($response, 'disconnect-ack') || str_contains($response, 'received response id'))) {
+            return true;
+        }
+
+        error_log(
+            sprintf(
+                '[hotspot] tryNasDisconnect: falha (exit=%d, target=%s). output=%s',
+                $exitCode,
+                $target,
+                substr(trim($stdout . ' ' . $stderr), 0, 300)
+            )
+        );
+
+        return false;
+    }
+
+    /**
+     * @return array{stdout:string,stderr:string,exit_code:int}
+     */
+    private function runProcess(string $command): array
+    {
+        $spec = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $proc = @proc_open($command, $spec, $pipes);
+        if (!is_resource($proc)) {
+            return [
+                'stdout' => '',
+                'stderr' => 'failed to start process',
+                'exit_code' => 255,
+            ];
+        }
+
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+
+        return [
+            'stdout' => (string) $stdout,
+            'stderr' => (string) $stderr,
+            'exit_code' => proc_close($proc),
+        ];
+    }
+
     private function hasUserFilters(array $filters): bool
     {
         foreach (['matricula', 'name', 'cpf', 'groupname'] as $key) {
             if (trim((string) ($filters[$key] ?? '')) !== '') {
                 return true;
             }
+        }
+
+        $blockedStatus = trim((string) ($filters['blocked_status'] ?? 'all'));
+        if (in_array($blockedStatus, ['blocked', 'unblocked'], true)) {
+            return true;
+        }
+
+        $sessionStatus = trim((string) ($filters['session_status'] ?? 'all'));
+        if (in_array($sessionStatus, ['active', 'inactive'], true)) {
+            return true;
         }
 
         return false;
@@ -373,6 +770,42 @@ final class RadiusRepository
         if (trim((string) ($filters['groupname'] ?? '')) !== '') {
             $conditions[] = 'ug.groupname = :groupname';
             $params[':groupname'] = trim((string) $filters['groupname']);
+        }
+
+        $blockedStatus = trim((string) ($filters['blocked_status'] ?? 'all'));
+        if ($blockedStatus === 'blocked') {
+            $conditions[] = "EXISTS (
+                SELECT 1
+                FROM radcheck rc
+                WHERE rc.username = u.username
+                  AND rc.attribute = 'Auth-Type'
+                  AND rc.value = 'Reject'
+            )";
+        } elseif ($blockedStatus === 'unblocked') {
+            $conditions[] = "NOT EXISTS (
+                SELECT 1
+                FROM radcheck rc
+                WHERE rc.username = u.username
+                  AND rc.attribute = 'Auth-Type'
+                  AND rc.value = 'Reject'
+            )";
+        }
+
+        $sessionStatus = trim((string) ($filters['session_status'] ?? 'all'));
+        if ($sessionStatus === 'active') {
+            $conditions[] = "EXISTS (
+                SELECT 1
+                FROM radacct ra
+                WHERE ra.username = u.username
+                  AND ra.acctstoptime IS NULL
+            )";
+        } elseif ($sessionStatus === 'inactive') {
+            $conditions[] = "NOT EXISTS (
+                SELECT 1
+                FROM radacct ra
+                WHERE ra.username = u.username
+                  AND ra.acctstoptime IS NULL
+            )";
         }
 
         $whereSql = $conditions !== [] ? 'WHERE ' . implode(' AND ', $conditions) : '';
