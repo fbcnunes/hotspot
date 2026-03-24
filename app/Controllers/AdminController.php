@@ -74,7 +74,7 @@ final class AdminController
         $profiles = $this->radiusRepository->getProfiles();
         $this->render('profiles', [
             'profiles' => $profiles,
-            'title' => 'Perfis de Banda'
+            'title' => 'Perfis de Grupo'
         ]);
     }
 

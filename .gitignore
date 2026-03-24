@@ -1,3 +1,6 @@
-##.env
+.env
 vendor/
-storage/logs/*.log
+hotspot
+hotspot.pub
+storage/logs/*
+!storage/logs/.gitkeep

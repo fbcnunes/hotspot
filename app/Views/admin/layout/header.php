@@ -28,10 +28,10 @@
                 <i class="fas fa-user-friends w-6"></i> Usuários
             </a>
             <a href="/admin/profiles" class="nav-link flex items-center px-6 py-3 transition <?= strpos($_SERVER['REQUEST_URI'], '/admin/profiles') !== false ? 'active' : '' ?>">
-                <i class="fas fa-users-cog w-6"></i> Perfis de Banda
+                <i class="fas fa-users-cog w-6"></i> Perfis de Grupo
             </a>
             <a href="/admin/settings" class="nav-link flex items-center px-6 py-3 transition <?= strpos($_SERVER['REQUEST_URI'], '/admin/settings') === 0 ? 'active' : '' ?>">
-                <i class="fas fa-cogs w-6"></i> Configurações
+                <i class="fas fa-cogs w-6"></i> Marketing
             </a>
             <a href="/admin/logs" class="nav-link flex items-center px-6 py-3 transition <?= strpos($_SERVER['REQUEST_URI'], '/admin/logs') === 0 ? 'active' : '' ?>">
                 <i class="fas fa-file-waveform w-6"></i> Logs do Sistema

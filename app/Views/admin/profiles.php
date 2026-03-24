@@ -1,6 +1,6 @@
 <div class="mb-10 flex justify-between items-end">
     <div>
-        <h1 class="text-3xl font-bold text-slate-800">Perfis de Banda</h1>
+        <h1 class="text-3xl font-bold text-slate-800">Perfis de Grupo</h1>
         <p class="text-slate-500">Gerencie limites de velocidade e tempo para os grupos</p>
     </div>
     <button onclick="document.getElementById('modal-profile').classList.remove('hidden')" 
